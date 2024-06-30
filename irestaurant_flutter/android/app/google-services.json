@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "955115573436",
+    "project_id": "irestaurant-245be",
+    "storage_bucket": "irestaurant-245be.appspot.com"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:955115573436:android:aae34679bc5f0325e0c0b9",
+        "android_client_info": {
+          "package_name": "tuckkenn.irestaurant"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBNQpju8wsdNyCOl8NCrC1j0H1yliF_5Eo"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

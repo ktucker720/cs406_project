@@ -24,15 +24,6 @@ class DefaultFirebaseOptions {
         return android;
       case TargetPlatform.iOS:
         return ios;
-      case TargetPlatform.macOS:
-        return macos;
-      case TargetPlatform.windows:
-        return windows;
-      case TargetPlatform.linux:
-        throw UnsupportedError(
-          'DefaultFirebaseOptions have not been configured for linux - '
-          'you can reconfigure this by running the FlutterFire CLI again.',
-        );
       default:
         throw UnsupportedError(
           'DefaultFirebaseOptions are not supported for this platform.',
@@ -64,25 +55,6 @@ class DefaultFirebaseOptions {
     messagingSenderId: '955115573436',
     projectId: 'irestaurant-245be',
     storageBucket: 'irestaurant-245be.appspot.com',
-    iosBundleId: 'com.example.irestaurantFlutter',
-  );
-
-  static const FirebaseOptions macos = FirebaseOptions(
-    apiKey: 'AIzaSyCXvoUxMgsbQrlNRBJDKgzGwA43NYse6x8',
-    appId: '1:955115573436:ios:56c09191490149b5e0c0b9',
-    messagingSenderId: '955115573436',
-    projectId: 'irestaurant-245be',
-    storageBucket: 'irestaurant-245be.appspot.com',
-    iosBundleId: 'com.example.irestaurantFlutter',
-  );
-
-  static const FirebaseOptions windows = FirebaseOptions(
-    apiKey: 'AIzaSyDoEmaV9fQkENhnAoskKiIthnRtpWKcdpo',
-    appId: '1:955115573436:web:d3f92d11510f9052e0c0b9',
-    messagingSenderId: '955115573436',
-    projectId: 'irestaurant-245be',
-    authDomain: 'irestaurant-245be.firebaseapp.com',
-    storageBucket: 'irestaurant-245be.appspot.com',
-    measurementId: 'G-4D0V336DZF',
+    iosBundleId: 'tuckkenn.irestaurant',
   );
 }

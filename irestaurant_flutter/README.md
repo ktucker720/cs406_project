@@ -2,6 +2,14 @@
 
 A new Flutter project.
 
+## References
+Tutorial Followed for Auth:
+https://firebase.google.com/codelabs/firebase-auth-in-flutter-apps
+
+Images:
+Plate Icon:
+https://pixabay.com/vectors/silverware-plate-fork-spoon-1667988/
+
 ## Getting Started
 
 This project is a starting point for a Flutter application.

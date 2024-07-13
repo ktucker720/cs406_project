@@ -55,6 +55,7 @@ class DefaultFirebaseOptions {
     messagingSenderId: '955115573436',
     projectId: 'irestaurant-245be',
     storageBucket: 'irestaurant-245be.appspot.com',
-    iosBundleId: 'tuckkenn.irestaurant',
+    iosBundleId: 'com.example.irestaurantFlutter',
   );
+
 }

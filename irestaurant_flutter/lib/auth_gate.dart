@@ -1,6 +1,7 @@
 import 'package:firebase_auth/firebase_auth.dart' hide EmailAuthProvider;
 import 'package:firebase_ui_auth/firebase_ui_auth.dart';
 import 'package:flutter/material.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 
 import 'reviews.dart';
 
@@ -16,6 +17,12 @@ class AuthGate extends StatelessWidget {
           return SignInScreen(
             providers: [
               EmailAuthProvider(),
+            ],
+            actions: [
+              AuthStateChangeAction<UserCreated>((context, state) {
+                // Create a database entry for the user
+                FirebaseFirestore.instance.collection("users").add({"uid": FirebaseAuth.instance.currentUser!.uid});
+              })
             ],
             headerMaxExtent: 170,
             headerBuilder: (context, constraints, shrinkOffset) {
@@ -43,7 +50,21 @@ class AuthGate extends StatelessWidget {
             },
           );
         }
-        return const ReviewsScreen();
+        else {
+          return FutureBuilder(
+            future: FirebaseFirestore.instance.collection("users")
+            .where('uid', isEqualTo: FirebaseAuth.instance.currentUser!.uid)
+            .get(),
+            builder: (context, snapshot) {
+              if (!snapshot.hasData) {
+                return const CircularProgressIndicator();
+              }
+              else {
+                return const ReviewsScreen();
+              }
+            }
+          );          
+        }
       },
     );
   }

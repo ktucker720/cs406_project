@@ -6,6 +6,10 @@ A new Flutter project.
 Tutorial Followed for Auth:
 https://firebase.google.com/codelabs/firebase-auth-in-flutter-apps
 
+Riverpod Help:
+https://codewithandrea.com/articles/flutter-state-management-riverpod/
+https://www.youtube.com/watch?v=zxe-0rOZdIc
+
 Images:
 Plate Icon:
 https://pixabay.com/vectors/silverware-plate-fork-spoon-1667988/

@@ -3,23 +3,26 @@ import 'package:firebase_auth/firebase_auth.dart' hide EmailAuthProvider;
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_ui_auth/firebase_ui_auth.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'place_select.dart';
+
+// Supports viewing and editing reviews
+enum DisplayMode { view, form, map }
 
 // Review data
 class ReviewModel {
   final int id;
-  bool isNew;
-  bool isEditing;
+  DisplayMode displayMode;
   String? docId;
-  String? name;
-  String? city;
+  Place? place;
   DateTime? date;
   int? stars;
   String? headline;
   String? description;
 
-  ReviewModel(this.id, this.isNew, this.isEditing, this.docId, Map<String, dynamic> data) {
-    name = data["name"];
-    city = data["city"];
+  ReviewModel(this.id, this.displayMode, this.docId, Map<String, dynamic> data) {
+    if(data["place"] != null) {
+      place = Place(data["place"]);
+    }
     if (data["date"] != null) {
       date = DateTime.fromMicrosecondsSinceEpoch(data["date"].microsecondsSinceEpoch);
     }
@@ -30,11 +33,9 @@ class ReviewModel {
 
   ReviewModel.fromOther(ReviewModel other) :
     id = other.id,
-    isNew = other.isNew,
-    isEditing = other.isEditing,
+    displayMode = other.displayMode,
     docId = other.docId,
-    name = other.name,
-    city = other.city,
+    place = other.place,
     date = other.date,
     stars = other.stars,
     headline = other.headline,
@@ -43,15 +44,160 @@ class ReviewModel {
   ReviewModel copyWith() {
     return ReviewModel.fromOther(this);
   }
+
+  bool isNew() {
+    return (docId == null);
+  }
+}
+
+final reviewsProvider = StateNotifierProvider<ReviewsNotifier, List<ReviewModel>>((ref) {
+  return ReviewsNotifier();
+});
+
+// The review list state management with Riverpod
+class ReviewsNotifier extends StateNotifier<List<ReviewModel>> {
+  ReviewsNotifier() : super([]) {
+    loadFromDatabase();
+  }
+  int nextId = 1;
+
+  void loadFromDatabase() {
+    FirebaseFirestore.instance.collection("reviews")
+    .where('uid', isEqualTo: FirebaseAuth.instance.currentUser!.uid)
+    .orderBy('date', descending: true)
+    .get()
+    .then((s) {
+      List<ReviewModel> newReviews = [];
+      for(var d in s.docs) {
+        newReviews.add(ReviewModel(nextId++, DisplayMode.view, d.id, d.data()));
+      }
+      state = newReviews;
+    })
+    .catchError((error) {
+      state = [];
+    });
+  }
+
+  void beginReview() {
+    // Start a new review in editing mode at the top if not already there
+    if(state.isEmpty || state[0].displayMode == DisplayMode.view) {
+      state = [ReviewModel(nextId++, DisplayMode.map, null, {}), ...state];
+    }
+  }
+
+  void cancelReviewEdit(int id) {
+    for(int i = 0; i < state.length; i++) {
+      if(state[i].id == id) {
+        if(state[i].isNew()) {
+          // Just remove cancelled new reviews
+          deleteReview(id);
+        } else {
+          // Change display from editing to viewing
+          state[i].displayMode = DisplayMode.view;
+          // Force state update
+          state = [...state];
+        }
+      }
+    }
+  }
+
+  void submitReviewEdit(int id, ReviewModel m) {
+    for(int i = 0; i < state.length; i++) {
+      if(state[i].id == id) {
+        var newData = {
+          "uid": FirebaseAuth.instance.currentUser!.uid,
+          "place": m.place,
+          "date": m.date,
+          "stars": m.stars,
+          "headline": m.headline,
+          "description": m.description
+        };
+        if(state[i].isNew()) {
+          // Add the new review to the database
+          FirebaseFirestore.instance.collection("reviews").add(newData);
+          // TODO set doc id if needed
+        } else {
+          // Update the existing review in the database
+          FirebaseFirestore.instance.collection("reviews").doc(m.docId).set(newData);
+        }
+        // Switch from form panel to view panel
+        m.displayMode = DisplayMode.view;
+        state[i] = m;
+      }
+    }
+    // Force state update
+    state = [...state];
+  }
+
+  void cancelPlaceSelect(int id) {
+    for(int i = 0; i < state.length; i++) {
+      if(state[i].id == id) {
+        // Switch from map panel to form panel, no changes to place
+        state[i].displayMode = DisplayMode.form;
+      }
+    }
+    // Force state update
+    state = [...state];
+  }
+
+  void submitPlaceSelect(int id, Place p) {
+    for(int i = 0; i < state.length; i++) {
+      if(state[i].id == id) {
+        // Switch from map panel to form panel
+        state[i].displayMode = DisplayMode.form;
+        state[i].place = p;
+      }
+    }
+    // Force state update
+    state = [...state];
+  }
+
+  void beginReviewEdit(int id) {
+    for(int i = 0; i < state.length; i++) {
+      if(state[i].id == id) {
+        // Switch from view panel to form panel
+        final s = state[i];
+        s.displayMode = DisplayMode.form;
+        state[i] = s;
+      }
+    }
+    // Force state update
+    state = [...state];
+  }
+
+  void beginPlaceSelect(int id) {
+    for(int i = 0; i < state.length; i++) {
+      if(state[i].id == id) {
+        // Switch from form panel to map panel
+        final s = state[i];
+        s.displayMode = DisplayMode.map;
+        state[i] = s;
+      }
+    }
+    // Force state update
+    state = [...state];
+  }
+
+  void deleteReview(int id) {
+    for(int i = 0; i < state.length; i++) {
+      if(state[i].id == id) {
+        if(!state[i].isNew()) {
+          // Delete existing reviews
+          FirebaseFirestore.instance.collection("reviews").doc(state[i].docId).delete();
+        }
+        state = [...state.where((element) {return element.id != id;})];
+      }
+    }
+  }
 }
 
 // A completed review entry that can be edited or deleted
 class ReviewEntry extends StatelessWidget {
-  const ReviewEntry({super.key, required this.data, required this.onEdit, required this.onDelete});
-
   final ReviewModel data;
   final void Function(int) onEdit;
   final void Function(int) onDelete;
+
+  const ReviewEntry({super.key, required this.data, required this.onEdit, required this.onDelete});
 
   @override
   Widget build(BuildContext context) {
@@ -64,7 +210,7 @@ class ReviewEntry extends StatelessWidget {
               mainAxisAlignment: MainAxisAlignment.start,
               children: <Widget>[
                 Text(
-                  "${data.name} - ${data.city} - ${data.date!.month.toString()}/${data.date!.day.toString()}/${data.date!.year.toString()}",
+                  "${data.place!.name} - ${data.place!.city} - ${data.date!.month.toString()}/${data.date!.day.toString()}/${data.date!.year.toString()}",
                   style: const TextStyle(fontWeight: FontWeight.bold)
                 ),
                 const SizedBox(width: 20),
@@ -111,13 +257,13 @@ class ReviewEntry extends StatelessWidget {
   }
 }
 
-// A form for creating a new review entry or editing an existing one
-class ReviewEntryForm extends StatefulWidget {
-  const ReviewEntryForm({super.key, required this.initialData, required this.onCancel, required this.onSubmit});
-
+// A form for editing a review
+class ReviewEntryForm extends ConsumerStatefulWidget {
   final ReviewModel initialData;
   final void Function(int) onCancel;
   final void Function(int, ReviewModel) onSubmit;
+
+  const ReviewEntryForm({super.key, required this.initialData, required this.onCancel, required this.onSubmit});
 
   @override
   ReviewEntryFormState createState() {
@@ -125,47 +271,38 @@ class ReviewEntryForm extends StatefulWidget {
   }
 }
 
-class ReviewEntryFormState extends State<ReviewEntryForm> {
+class ReviewEntryFormState extends ConsumerState<ReviewEntryForm> {
   final List<int> starList = <int>[1, 2, 3, 4, 5];
   final _formKey = GlobalKey<FormState>();
   ReviewModel? newData;
 
   @override
-  Widget build(BuildContext context) {
+  void initState() {
+    super.initState();
     newData ??= widget.initialData;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    var placeText = "Place ";
+    if(newData?.place?.name != null && newData?.place?.city != null) {
+      placeText += "(${newData?.place?.name} - ${newData?.place?.city})";
+    }
+    else  {
+      placeText += "(Tap to Select)";
+    }
     return Form(
       key: _formKey,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          TextFormField(
-            decoration: const InputDecoration(
-              labelText: 'Name',
-            ),
-            initialValue: newData?.name ?? "",
-            onChanged: (newValue) {
-              newData!.name = newValue;
+          ElevatedButton(
+            onPressed: () {
+              ref.read(reviewsProvider.notifier).beginPlaceSelect(newData!.id);
             },
-            validator: (value) {
-              if (value == null || value.isEmpty) {
-                return 'Please enter the restaurant name';
-              }
-              return null;
-          }),
-          TextFormField(
-            decoration: const InputDecoration(
-              labelText: 'City',
-            ),
-            initialValue: newData?.city ?? "",
-            onChanged: (newValue) {
-              newData!.city = newValue;
-            },
-            validator: (value) {
-              if (value == null || value.isEmpty) {
-                return 'Please enter the city name';
-              }
-              return null;
-          },),
+            child: Text(placeText),
+            style: ElevatedButton.styleFrom(backgroundColor: const Color.fromARGB(255, 230, 230, 255))
+          ),
           DropdownButtonFormField<int>(
             value: newData?.stars,
             items: starList.map<DropdownMenuItem<int>>((int value) {
@@ -198,8 +335,8 @@ class ReviewEntryFormState extends State<ReviewEntryForm> {
                 if (value == null || value.isEmpty) {
                   return 'Please enter a headline';
                 }
-                return null;
-          },),
+                return null;}
+          ),
           TextFormField(
             decoration: const InputDecoration(
               labelText: 'Description',
@@ -212,29 +349,31 @@ class ReviewEntryFormState extends State<ReviewEntryForm> {
               if (value == null || value.isEmpty) {
                 return 'Please enter a description';
               }
-              return null;
-            },),
+              return null;}
+              ),
           Row(children: [
             Padding(
-              padding: const EdgeInsets.fromLTRB(0, 16, 16, 0),
+              padding: const EdgeInsets.fromLTRB(0, 10, 10, 0),
               child: ElevatedButton(
                 onPressed: () {
                   widget.onCancel.call(widget.initialData.id);
                 },
                 child: const Text('Cancel'),
+                style: ElevatedButton.styleFrom(backgroundColor: const Color.fromARGB(255, 230, 230, 255))
               ),
             ),
             Padding(
-              padding: const EdgeInsets.fromLTRB(16, 16, 0, 0),
+              padding: const EdgeInsets.fromLTRB(10, 10, 0, 0),
               child: ElevatedButton(
                 onPressed: () {
-                  if (_formKey.currentState?.validate() ?? false) {
+                  if ((_formKey.currentState?.validate() ?? false) && (newData?.place != null)) {
                     newData!.date = DateTime.now();
                     // Create a new version of the review with the new form data
                     widget.onSubmit.call(newData!.id, newData!);
                   }
                 },
                 child: const Text('Submit'),
+                style: ElevatedButton.styleFrom(backgroundColor: const Color.fromARGB(255, 230, 230, 255))
               ),
             ),
           ],),
@@ -244,109 +383,21 @@ class ReviewEntryFormState extends State<ReviewEntryForm> {
   }
 }
 
-final reviewsProvider = StateNotifierProvider<ReviewsNotifier, List<ReviewModel>>((ref) {
-  return ReviewsNotifier();
-});
+// An interactive map for selecting a review's place
+class ReviewEntryMap extends ConsumerWidget {
+  final ReviewModel initialData;
+  final void Function(int) onCancel;
+  final void Function(int, Place) onSubmit;
 
-// The review list state management with Riverpod
-class ReviewsNotifier extends StateNotifier<List<ReviewModel>> {
-  ReviewsNotifier() : super([]) {
-    loadFromDatabase();
-  }
-  int nextId = 1;
+  const ReviewEntryMap({super.key, required this.initialData, required this.onCancel, required this.onSubmit});
 
-  void loadFromDatabase() {
-    FirebaseFirestore.instance.collection("reviews")
-    .where('uid', isEqualTo: FirebaseAuth.instance.currentUser!.uid)
-    .orderBy('date', descending: true)
-    .get()
-    .then((s) {
-      List<ReviewModel> newReviews = [];
-      for(var d in s.docs) {
-        newReviews.add(ReviewModel(nextId++, false, false, d.id, d.data()));
-      }
-      state = newReviews;
-    })
-    .catchError((error) {
-      state = [];
-    });
-  }
-
-  void beginReview() {
-    // Start a new review in editing mode at the top if not already there
-    if(state.isEmpty || !state[0].isEditing) {
-      state = [ReviewModel(nextId++, true, true, null, {}), ...state];
-    }
-  }
-
-  void cancelReviewEdit(int id) {
-    for(int i = 0; i < state.length; i++) {
-      if(state[i].id == id) {
-        if(state[i].isNew) {
-          // Just remove cancelled new reviews
-          deleteReview(id);
-        } else {
-          // Change the edit flag
-          state[i].isEditing = false;
-        }
-      }
-    }
-    // Force state update
-    state = [...state];
-  }
-
-  void submitReviewEdit(int id, ReviewModel m) {
-    for(int i = 0; i < state.length; i++) {
-      if(state[i].id == id) {
-        var newData = {
-          "uid": FirebaseAuth.instance.currentUser!.uid,
-          "name": m.name,
-          "city": m.city,
-          "date": m.date,
-          "stars": m.stars,
-          "headline": m.headline,
-          "description": m.description
-        };
-        if(state[i].isNew) {
-          // Add the new review to the database
-          FirebaseFirestore.instance.collection("reviews").add(newData);
-        } else {
-          // Update the existing review in the database
-          FirebaseFirestore.instance.collection("reviews").doc(m.docId).set(newData);
-        }
-        // Switch from form panel to view panel
-        m.isNew = false;
-        m.isEditing = false;
-        state[i] = m;
-      }
-    }
-    // Force state update
-    state = [...state];
-  }
-
-  void beginReviewEdit(int id) {
-    for(int i = 0; i < state.length; i++) {
-      if(state[i].id == id) {
-        // Change the edit flag
-        final s = state[i];
-        s.isEditing = true;
-        state[i] = s;
-      }
-    }
-    // Force state update
-    state = [...state];
-  }
-
-  void deleteReview(int id) {
-    for(int i = 0; i < state.length; i++) {
-      if(state[i].id == id) {
-        if(!state[i].isNew) {
-          // Delete existing reviews
-          FirebaseFirestore.instance.collection("reviews").doc(state[i].docId).delete();
-        }
-        state = [...state.where((element) {return element.id != id;})];
-      }
-    }
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    return PlaceSearchMap(
+      initialData: initialData.place,
+      onCancel: () {onCancel(initialData.id);},
+      onSubmit: (Place p) {onSubmit(initialData.id, p);}
+    );
   }
 }
 
@@ -361,32 +412,48 @@ class ReviewsList extends ConsumerWidget {
       itemCount: reviews.length,
       itemBuilder: (context, index) {
         final review = reviews[index].copyWith();
-        if(review.isEditing) {
+        if(review.displayMode == DisplayMode.form) {
           return Container(
-            padding: const EdgeInsets.all(5),
+            padding: const EdgeInsets.all(10),
             decoration: BoxDecoration(
               border: Border.all(
                 color: Colors.grey,
               ),
-              borderRadius: const BorderRadius.all(Radius.circular(20))
+              borderRadius: const BorderRadius.all(Radius.circular(10))
             ),
             child: ReviewEntryForm(
               initialData: review,
               onCancel: (int id) {ref.read(reviewsProvider.notifier).cancelReviewEdit(id);},
               onSubmit: (int id, ReviewModel m) {ref.read(reviewsProvider.notifier).submitReviewEdit(id, m);}));
         }
-        return Container(
-          padding: const EdgeInsets.all(5),
-          decoration: BoxDecoration(
+        else if(review.displayMode == DisplayMode.map) {
+          return Container(
+            padding: const EdgeInsets.all(5),
+            decoration: BoxDecoration(
               border: Border.all(
                 color: Colors.grey,
               ),
-              borderRadius: const BorderRadius.all(Radius.circular(20))
-          ),
-          child: ReviewEntry(
-            data: review,
-            onEdit: (int id) {ref.read(reviewsProvider.notifier).beginReviewEdit(id);},
-            onDelete: (int id) {ref.read(reviewsProvider.notifier).deleteReview(id);}));
+              borderRadius: const BorderRadius.all(Radius.circular(10))
+            ),
+            child: ReviewEntryMap(
+              initialData: review,
+              onCancel: (int id) {ref.read(reviewsProvider.notifier).cancelPlaceSelect(id);},
+              onSubmit: (int id, Place p) {ref.read(reviewsProvider.notifier).submitPlaceSelect(id, p);}));
+        }
+        else {
+          return Container(
+            padding: const EdgeInsets.all(5),
+            decoration: BoxDecoration(
+                border: Border.all(
+                  color: Colors.grey,
+                ),
+                borderRadius: const BorderRadius.all(Radius.circular(10))
+            ),
+            child: ReviewEntry(
+              data: review,
+              onEdit: (int id) {ref.read(reviewsProvider.notifier).beginReviewEdit(id);},
+              onDelete: (int id) {ref.read(reviewsProvider.notifier).deleteReview(id);}));
+        }
       },
     );
   }
@@ -437,7 +504,7 @@ class ReviewsScreen extends ConsumerWidget {
         ],
         automaticallyImplyLeading: false,
       ),
-      body: Container(padding: const EdgeInsets.all(5), child: const ReviewsList()),
+      body: Container(padding: const EdgeInsets.all(10), child: const ReviewsList()),
     );
   }
 }

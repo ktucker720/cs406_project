@@ -10,6 +10,11 @@ Riverpod Help:
 https://codewithandrea.com/articles/flutter-state-management-riverpod/
 https://www.youtube.com/watch?v=zxe-0rOZdIc
 
+Google Maps:
+https://codelabs.developers.google.com/codelabs/google-maps-in-flutter
+https://medium.com/@ay0o5h/how-to-add-search-to-google-map-in-flutter-ffe4be319b59
+https://www.youtube.com/watch?v=Gcw1-8DpqCI
+
 Images:
 Plate Icon:
 https://pixabay.com/vectors/silverware-plate-fork-spoon-1667988/

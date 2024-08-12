@@ -19,9 +19,9 @@ class ReviewModel {
   String? headline;
   String? description;
 
-  ReviewModel(this.id, this.displayMode, this.docId, Map<String, dynamic> data) {
+  ReviewModel.fromData(this.id, this.displayMode, this.docId, Map<String, dynamic> data) {
     if(data["place"] != null) {
-      place = Place(data["place"]);
+      place = Place.fromData(data["place"]);
     }
     if (data["date"] != null) {
       date = DateTime.fromMicrosecondsSinceEpoch(data["date"].microsecondsSinceEpoch);
@@ -69,7 +69,7 @@ class ReviewsNotifier extends StateNotifier<List<ReviewModel>> {
     .then((s) {
       List<ReviewModel> newReviews = [];
       for(var d in s.docs) {
-        newReviews.add(ReviewModel(nextId++, DisplayMode.view, d.id, d.data()));
+        newReviews.add(ReviewModel.fromData(nextId++, DisplayMode.view, d.id, d.data()));
       }
       state = newReviews;
     })
@@ -81,7 +81,7 @@ class ReviewsNotifier extends StateNotifier<List<ReviewModel>> {
   void beginReview() {
     // Start a new review in editing mode at the top if not already there
     if(state.isEmpty || state[0].displayMode == DisplayMode.view) {
-      state = [ReviewModel(nextId++, DisplayMode.map, null, {}), ...state];
+      state = [ReviewModel.fromData(nextId++, DisplayMode.map, null, {}), ...state];
     }
   }
 
@@ -106,11 +106,11 @@ class ReviewsNotifier extends StateNotifier<List<ReviewModel>> {
       if(state[i].id == id) {
         var newData = {
           "uid": FirebaseAuth.instance.currentUser!.uid,
-          "place": m.place,
-          "date": m.date,
-          "stars": m.stars,
-          "headline": m.headline,
-          "description": m.description
+          "place": m.place!.toData(),
+          "date": m.date!,
+          "stars": m.stars!,
+          "headline": m.headline!,
+          "description": m.description!
         };
         if(state[i].isNew()) {
           // Add the new review to the database
@@ -300,8 +300,8 @@ class ReviewEntryFormState extends ConsumerState<ReviewEntryForm> {
             onPressed: () {
               ref.read(reviewsProvider.notifier).beginPlaceSelect(newData!.id);
             },
-            child: Text(placeText),
-            style: ElevatedButton.styleFrom(backgroundColor: const Color.fromARGB(255, 230, 230, 255))
+            style: ElevatedButton.styleFrom(backgroundColor: const Color.fromARGB(255, 230, 230, 255)),
+            child: Text(placeText)
           ),
           DropdownButtonFormField<int>(
             value: newData?.stars,
@@ -358,8 +358,8 @@ class ReviewEntryFormState extends ConsumerState<ReviewEntryForm> {
                 onPressed: () {
                   widget.onCancel.call(widget.initialData.id);
                 },
-                child: const Text('Cancel'),
-                style: ElevatedButton.styleFrom(backgroundColor: const Color.fromARGB(255, 230, 230, 255))
+                style: ElevatedButton.styleFrom(backgroundColor: const Color.fromARGB(255, 230, 230, 255)),
+                child: const Text('Cancel')
               ),
             ),
             Padding(
@@ -372,8 +372,8 @@ class ReviewEntryFormState extends ConsumerState<ReviewEntryForm> {
                     widget.onSubmit.call(newData!.id, newData!);
                   }
                 },
-                child: const Text('Submit'),
-                style: ElevatedButton.styleFrom(backgroundColor: const Color.fromARGB(255, 230, 230, 255))
+                style: ElevatedButton.styleFrom(backgroundColor: const Color.fromARGB(255, 230, 230, 255)),
+                child: const Text('Submit')
               ),
             ),
           ],),

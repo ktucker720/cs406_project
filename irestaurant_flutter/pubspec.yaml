@@ -44,8 +44,6 @@ dependencies:
   riverpod_annotation: ^2.3.5
   google_maps_flutter: ^2.9.0
   http: ^1.2.2
-  json_annotation: ^4.9.0
-  json_serializable: ^6.8.0
   location: ^6.0.2
   permission_handler: ^11.3.1
 

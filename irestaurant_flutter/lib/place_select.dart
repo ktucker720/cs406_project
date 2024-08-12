@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
@@ -46,20 +47,58 @@ class PlaceSearchMap extends StatefulWidget {
 }
 
 class PlaceSearchMapState extends State<PlaceSearchMap> {
+  // Used to obtain the user's location
   Location location = Location();
-  final Map<String, Marker> _markers = {};
-  double latitude = 0;
-  double longitude = 0;
+  // Used to control the Google Map rendering
   GoogleMapController? _controller;
   final kGoogleApiKey = 'AIzaSyB6iE4pvqiNIi8Hfrcajr9VQJ-8RrkUzzA';
-  // Start with an initial position in NYC
-  final CameraPosition _kGooglePlex = const CameraPosition(
+  // Start with an initial position in NYC if new and no current location
+  double latitude = 40.730610;
+  double longitude = -73.935242;
+  CameraPosition initialCameraPosition = const CameraPosition(
     target: LatLng(40.730610, -73.935242),
-    zoom: 10,
+    zoom: 12,
   );
+  // Various named markers in the map
+  final Map<String, Marker> _markers = {};
+  // The map controller can show an info pane for a marker,
+  // but only after the map has received the new markers.
+  String? showMarker;
+  // Search query content
   String query = "";
 
-  // Obtain the user's current location
+  @override
+  void initState() {
+    super.initState();
+    final initialLoc = widget.initialData?.latLng;
+    // If editing an existing place, start there
+    if(initialLoc != null) {
+      latitude = initialLoc.latitude;
+      longitude = initialLoc.longitude;
+      initialCameraPosition = CameraPosition(
+        target: LatLng(latitude, longitude),
+        zoom: 14,
+      );
+      _markers["oldSelection"] = Marker(
+        markerId: const MarkerId('oldSelection'),
+        position: LatLng(latitude, longitude),
+        consumeTapEvents: true,
+        onTap: () {
+          // Selecting the old place is the same as cancelling
+          widget.onCancel();
+        },
+        infoWindow: InfoWindow(
+          title: "${widget.initialData?.name}, ${widget.initialData?.city}",
+          onTap: () {
+            widget.onCancel();
+          },
+        )
+      );
+      showMarker = 'oldSelection';
+    }
+  }
+
+  // Obtain the user's current location and center the map and search on it
   getCurrentLocation() async {
     bool serviceEnabled = await location.serviceEnabled();
     if (!serviceEnabled) {
@@ -89,9 +128,10 @@ class PlaceSearchMapState extends State<PlaceSearchMap> {
     );
     setState(() {
       _markers['myLocation'] = marker;
+      showMarker = 'myLocation';
       _controller?.animateCamera(
         CameraUpdate.newCameraPosition(
-          CameraPosition(target: LatLng(latitude, longitude), zoom: 15),
+          CameraPosition(target: LatLng(latitude, longitude), zoom: 13),
         ),
       );
     });
@@ -127,6 +167,7 @@ class PlaceSearchMapState extends State<PlaceSearchMap> {
       setState(() {
         var resultNumber = 1;
         for(var resultItem in result["places"]) {
+          var resultId = "result$resultNumber";
           String placeId = resultItem["id"];
           String placeName = resultItem["displayName"]["text"];
           String placeCity = "";
@@ -140,32 +181,51 @@ class PlaceSearchMapState extends State<PlaceSearchMap> {
           LatLng placeLatLng = LatLng(resultItem["location"]["latitude"], resultItem["location"]["longitude"]);
           final place = Place(placeId, placeName, placeCity, placeLatLng);
           // Selecting the marker (or its info) results in the place being selected
-          _markers["result${resultNumber++}"] = Marker(
-            markerId: MarkerId(place.id!),
+          _markers[resultId] = Marker(
+            markerId: MarkerId(resultId),
             position: LatLng(place.latLng!.latitude, place.latLng!.longitude),
             consumeTapEvents: true,
             onTap: () {
               widget.onSubmit(place);
             },
             infoWindow: InfoWindow(
-              title: place.name,
-              snippet: place.city,
+              title: "${place.name}, ${place.city}",
               onTap: () {
                 widget.onSubmit(place);
               },
             )
           );
+          // Center on the first result and show its info
+          if(resultNumber == 1) {
+            _controller?.animateCamera(CameraUpdate.newCameraPosition(
+              CameraPosition(target: LatLng(place.latLng!.latitude, place.latLng!.longitude), zoom: 14),
+            ));
+            showMarker = resultId;
+            // Remove non-result markers
+            _markers.remove("myLocation");
+            _markers.remove("oldSelection");
+            _markers.remove("searchLocation");
+          }
+          resultNumber++;
         }
-
       });
-    } else {
-      // TODO handle error better
-      print(streamedResponse.reasonPhrase);
-    } 
+    }
   }
 
   @override
   Widget build(BuildContext context) {
+    if(showMarker != null) {
+      // Tell the map controller to show the info panel for a marker,
+      // waiting a short delay until after the controller is aware of
+      // any new markers.
+      Timer(const Duration(seconds: 1), () {
+        // Prevent double click causing null dereference
+        if(showMarker != null) {
+          _controller?.showMarkerInfoWindow(MarkerId(showMarker!));
+        }
+        showMarker = null;
+      });
+    }
     return Stack(
       children: [
         SizedBox(
@@ -174,25 +234,33 @@ class PlaceSearchMapState extends State<PlaceSearchMap> {
           child: GoogleMap(
             mapType: MapType.normal,
             myLocationEnabled: true,
-            initialCameraPosition: _kGooglePlex,
+            initialCameraPosition: initialCameraPosition,
             markers: _markers.values.toSet(),
             onTap: (LatLng latlng) {
               latitude = latlng.latitude;
               longitude = latlng.longitude;
+              const markerId = MarkerId('searchLocation');
               final marker = Marker(
-                markerId: const MarkerId('myLocation'),
+                markerId: markerId,
                 position: LatLng(latitude, longitude),
                 infoWindow: const InfoWindow(
-                  title: 'My New Location',
+                  title: 'Search Near Here',
                 ),
               );
               setState(() {
-                _markers['myLocation'] = marker;
+                _markers['searchLocation'] = marker;
+                showMarker = 'searchLocation';
+                // Remove initial location markers since searching elsewhere
+                _markers.remove("myLocation");
+                _markers.remove("oldSelection");
               });
             },
             onMapCreated: (GoogleMapController controller) {
               _controller = controller;
-              getCurrentLocation();
+              // Center on user's location if no previous place.
+              if(_markers["oldSelection"] == null) {
+                getCurrentLocation();
+              }
             },
           ),
         ),
@@ -209,6 +277,10 @@ class PlaceSearchMapState extends State<PlaceSearchMap> {
                   onChanged: (String s) {
                     query = s;
                   },
+                  onSubmitted: (String s) {
+                    query = s;
+                    searchPlaces();
+                  },
                   decoration: const InputDecoration(
                     filled: true,
                     fillColor: Colors.white,
@@ -216,14 +288,6 @@ class PlaceSearchMapState extends State<PlaceSearchMap> {
                     labelText: 'Name Search',
                   ),
                 )
-              )
-            ),
-            Padding(
-              padding: const EdgeInsets.fromLTRB(10, 10, 0, 0),
-              child: ElevatedButton(
-                onPressed: searchPlaces,
-                style: ElevatedButton.styleFrom(backgroundColor: const Color.fromARGB(255, 230, 230, 255)),
-                child: const Text('Search')
               )
             ),
             Padding(

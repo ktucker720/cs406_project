@@ -56,10 +56,13 @@ final reviewsProvider = StateNotifierProvider<ReviewsNotifier, List<ReviewModel>
 
 // The review list state management with Riverpod
 class ReviewsNotifier extends StateNotifier<List<ReviewModel>> {
+  int nextId = 1;
+  // Backup old data when editing
+  Map<int, ReviewModel> oldData = {};
+
   ReviewsNotifier() : super([]) {
     loadFromDatabase();
   }
-  int nextId = 1;
 
   void loadFromDatabase() {
     FirebaseFirestore.instance.collection("reviews")
@@ -79,8 +82,8 @@ class ReviewsNotifier extends StateNotifier<List<ReviewModel>> {
   }
 
   void beginReview() {
-    // Start a new review in editing mode at the top if not already there
-    if(state.isEmpty || state[0].displayMode == DisplayMode.view) {
+    // Start a new review at the top if not already there
+    if(state.isEmpty || !state[0].isNew()) {
       state = [ReviewModel.fromData(nextId++, DisplayMode.map, null, {}), ...state];
     }
   }
@@ -92,6 +95,8 @@ class ReviewsNotifier extends StateNotifier<List<ReviewModel>> {
           // Just remove cancelled new reviews
           deleteReview(id);
         } else {
+          // Revert to old version backup
+          state[i] = oldData.remove(id)!;
           // Change display from editing to viewing
           state[i].displayMode = DisplayMode.view;
           // Force state update
@@ -114,19 +119,29 @@ class ReviewsNotifier extends StateNotifier<List<ReviewModel>> {
         };
         if(state[i].isNew()) {
           // Add the new review to the database
-          FirebaseFirestore.instance.collection("reviews").add(newData);
-          // TODO set doc id if needed
+          FirebaseFirestore.instance.collection("reviews").add(newData).then((documentSnapshot) {
+            // Switch from form panel to view panel
+            m.displayMode = DisplayMode.view;
+            // Get the new ID
+            m.docId = documentSnapshot.id;
+            // Force state update
+            state[i] = m;
+            state = [...state];
+          });
         } else {
           // Update the existing review in the database
-          FirebaseFirestore.instance.collection("reviews").doc(m.docId).set(newData);
+          FirebaseFirestore.instance.collection("reviews").doc(m.docId).set(newData).then((_) {
+            // Switch from form panel to view panel
+            m.displayMode = DisplayMode.view;
+            // Remove old version backup
+            oldData.remove(id);
+            // Force state update
+            state[i] = m;
+            state = [...state];
+          });
         }
-        // Switch from form panel to view panel
-        m.displayMode = DisplayMode.view;
-        state[i] = m;
       }
     }
-    // Force state update
-    state = [...state];
   }
 
   void cancelPlaceSelect(int id) {
@@ -155,10 +170,10 @@ class ReviewsNotifier extends StateNotifier<List<ReviewModel>> {
   void beginReviewEdit(int id) {
     for(int i = 0; i < state.length; i++) {
       if(state[i].id == id) {
+        // Backup a copy of the existing data
+        oldData[id] = state[i].copyWith();
         // Switch from view panel to form panel
-        final s = state[i];
-        s.displayMode = DisplayMode.form;
-        state[i] = s;
+        state[i].displayMode = DisplayMode.form;
       }
     }
     // Force state update
@@ -169,9 +184,7 @@ class ReviewsNotifier extends StateNotifier<List<ReviewModel>> {
     for(int i = 0; i < state.length; i++) {
       if(state[i].id == id) {
         // Switch from form panel to map panel
-        final s = state[i];
-        s.displayMode = DisplayMode.map;
-        state[i] = s;
+        state[i].displayMode = DisplayMode.map;
       }
     }
     // Force state update
@@ -182,10 +195,11 @@ class ReviewsNotifier extends StateNotifier<List<ReviewModel>> {
     for(int i = 0; i < state.length; i++) {
       if(state[i].id == id) {
         if(!state[i].isNew()) {
-          // Delete existing reviews
+          // Delete existing reviews from database
           FirebaseFirestore.instance.collection("reviews").doc(state[i].docId).delete();
         }
         state = [...state.where((element) {return element.id != id;})];
+        oldData.remove(id);
       }
     }
   }
@@ -202,57 +216,76 @@ class ReviewEntry extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Center(
-      child: Card(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: <Widget>[
-            Row(
-              mainAxisAlignment: MainAxisAlignment.start,
-              children: <Widget>[
-                Text(
-                  "${data.place!.name} - ${data.place!.city} - ${data.date!.month.toString()}/${data.date!.day.toString()}/${data.date!.year.toString()}",
-                  style: const TextStyle(fontWeight: FontWeight.bold)
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: <Widget>[
+          Row(
+            mainAxisAlignment: MainAxisAlignment.start,
+            children: <Widget>[
+              SizedBox(
+                width: 180,
+                child: Text(
+                  "${data.place!.name}, ${data.place!.city}",
+                  style: const TextStyle(fontWeight: FontWeight.bold),
+                  overflow: TextOverflow.ellipsis,
                 ),
-                const SizedBox(width: 20),
-                Text(
+              ),
+              const SizedBox(width: 20),
+              SizedBox(
+                width: 10,
+                child: Text(
                   data.stars!.toString(),
-                  style: const TextStyle(fontWeight: FontWeight.bold)),
-                const Icon(Icons.star),
-                const SizedBox(width: 20),
-                IconButton(
-                  iconSize: 20,
-                  icon: const Icon(Icons.edit),
-                  onPressed: () {
-                    onEdit(data.id);
-                  },
-                ),
-                IconButton(
-                  iconSize: 20,
-                  icon: const Icon(Icons.delete),
-                  onPressed: () {
-                    onDelete(data.id);
-                  },
-                ),
-              ],
-            ),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.start,
-              children: <Widget>[
-                Text(
-                  data.headline!.toString(),
                   style: const TextStyle(fontWeight: FontWeight.bold)
                 )
-              ],
-            ),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.start,
-              children: <Widget>[
-                Text(data.description!.toString())
-              ],
-            ),
-          ],
-        ),
-      ),
+              ),
+              const SizedBox(
+                width: 20,
+                child: Icon(Icons.star)
+              ),
+              const SizedBox(width: 20),
+              SizedBox(
+                width: 80,
+                child: Text(
+                  "${data.date!.month.toString()}/${data.date!.day.toString()}/${data.date!.year.toString()}"
+                ),
+              ),
+              const SizedBox(width: 20),
+              IconButton(
+                iconSize: 20,
+                icon: const Icon(Icons.edit),
+                style: IconButton.styleFrom(backgroundColor: const Color.fromARGB(255, 230, 230, 255)),
+                onPressed: () {
+                  onEdit(data.id);
+                },
+              ),
+              const SizedBox(width: 20),
+              IconButton(
+                iconSize: 20,
+                icon: const Icon(Icons.delete),
+                style: IconButton.styleFrom(backgroundColor: const Color.fromARGB(255, 230, 230, 255)),
+                onPressed: () {
+                  onDelete(data.id);
+                },
+              ),
+            ],
+          ),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.start,
+            children: <Widget>[
+              Flexible(child: Text(
+                data.headline!.toString(),
+                style: const TextStyle(fontWeight: FontWeight.bold)
+              ))
+            ],
+          ),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.start,
+            children: <Widget>[
+              Flexible(child: Text(data.description!.toString()))
+            ],
+          ),
+        ],
+      )
     );
   }
 }
@@ -286,7 +319,7 @@ class ReviewEntryFormState extends ConsumerState<ReviewEntryForm> {
   Widget build(BuildContext context) {
     var placeText = "Place ";
     if(newData?.place?.name != null && newData?.place?.city != null) {
-      placeText += "(${newData?.place?.name} - ${newData?.place?.city})";
+      placeText += "(${newData?.place?.name}, ${newData?.place?.city})";
     }
     else  {
       placeText += "(Tap to Select)";
@@ -408,13 +441,16 @@ class ReviewsList extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final reviews = ref.watch(reviewsProvider);
-    return ListView.builder(
+    return ListView.separated(
       itemCount: reviews.length,
+      separatorBuilder: (context, index) {
+        return const Divider(height: 10);
+      },
       itemBuilder: (context, index) {
         final review = reviews[index].copyWith();
         if(review.displayMode == DisplayMode.form) {
           return Container(
-            padding: const EdgeInsets.all(10),
+            padding: const EdgeInsets.all(5),
             decoration: BoxDecoration(
               border: Border.all(
                 color: Colors.grey,

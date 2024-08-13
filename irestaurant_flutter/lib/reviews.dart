@@ -60,8 +60,11 @@ class ReviewsNotifier extends StateNotifier<List<ReviewModel>> {
   // Backup old data when editing
   Map<int, ReviewModel> oldData = {};
 
-  ReviewsNotifier() : super([]) {
-    loadFromDatabase();
+  ReviewsNotifier() : super([]);
+
+  // Clear screen of all entries, useful when switching users
+  void clear() {
+    state = [];
   }
 
   void loadFromDatabase() {
